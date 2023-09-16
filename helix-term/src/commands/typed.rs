@@ -2193,6 +2193,34 @@ fn refresh_config(
     Ok(())
 }
 
+// This function provides details on the current document (filepath, selection ranges) via environment variables.
+// This allows the development of external tools that can edit the document.
+// Current approach is a bit crude:
+// * The environment variables are never unset: it is necessary for the external tool to use 'helix_range_count' to know what 'helix_range_XXX' variables are active.
+// * This functionality cannot be enabled/disabled and might overwrite existing environment variables.
+// Following environment variables are set:
+// * 'helix_filepath': full path to the current document
+// * 'helix_range_count': the number of selection ranges currently present
+// * 'helix_range_primary': the primary selection range (0-based)
+// * 'helix_range_INDEX': for each INDEX from 0 to 'helix_range_count-1', the range.from() and range.len() values delimited with a ':'.
+fn set_document_info_into_env_vars(cx: &mut compositor::Context) {
+    let (view, doc) = current!(cx.editor);
+    if let Some(path) = doc.path() {
+        std::env::set_var("helix_filepath", path.to_str().unwrap_or_default());
+    }
+
+    let selection = doc.selection(view.id);
+    std::env::set_var("helix_range_primary", selection.primary_index().to_string());
+    let ranges = selection.ranges();
+    std::env::set_var("helix_range_count", ranges.len().to_string());
+    for (ix, &range) in ranges.iter().enumerate() {
+        std::env::set_var(
+            format!("helix_range_{}", ix),
+            format!("{}:{}", range.from(), range.len()),
+        );
+    }
+}
+
 fn append_output(
     cx: &mut compositor::Context,
     args: &[Cow<str>],
@@ -2201,6 +2229,8 @@ fn append_output(
     if event != PromptEvent::Validate {
         return Ok(());
     }
+
+    set_document_info_into_env_vars(cx);
 
     ensure!(!args.is_empty(), "Shell command required");
     shell(cx, &args.join(" "), &ShellBehavior::Append);
@@ -2215,6 +2245,8 @@ fn insert_output(
     if event != PromptEvent::Validate {
         return Ok(());
     }
+
+    set_document_info_into_env_vars(cx);
 
     ensure!(!args.is_empty(), "Shell command required");
     shell(cx, &args.join(" "), &ShellBehavior::Insert);
@@ -2244,6 +2276,9 @@ fn pipe_impl(
     }
 
     ensure!(!args.is_empty(), "Shell command required");
+
+    set_document_info_into_env_vars(cx);
+
     shell(cx, &args.join(" "), behavior);
     Ok(())
 }
@@ -2256,6 +2291,8 @@ fn run_shell_command(
     if event != PromptEvent::Validate {
         return Ok(());
     }
+
+    set_document_info_into_env_vars(cx);
 
     let shell = cx.editor.config().shell.clone();
     let args = args.join(" ");
