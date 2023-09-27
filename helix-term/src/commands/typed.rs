@@ -2245,7 +2245,10 @@ fn refresh_config(
 // * 'helix_range_count': the number of selection ranges currently present
 // * 'helix_range_primary': the primary selection range (0-based)
 // * 'helix_range_INDEX': for each INDEX from 0 to 'helix_range_count-1', the range.from() and range.len() values delimited with a ':'.
-fn set_document_info_into_env_vars(cx: &mut compositor::Context) {
+fn set_document_info_into_env_vars(cx: &mut compositor::Context) -> anyhow::Result<()> {
+    // Not sure if this is the correct place, but it is important that all writes complete before we call user programs
+    cx.block_try_flush_writes()?;
+
     let (view, doc) = current!(cx.editor);
     if let Some(path) = doc.path() {
         std::env::set_var("helix_filepath", path.to_str().unwrap_or_default());
@@ -2261,6 +2264,8 @@ fn set_document_info_into_env_vars(cx: &mut compositor::Context) {
             format!("{}:{}", range.from(), range.len()),
         );
     }
+
+    Ok(())
 }
 
 fn append_output(
@@ -2272,7 +2277,7 @@ fn append_output(
         return Ok(());
     }
 
-    set_document_info_into_env_vars(cx);
+    set_document_info_into_env_vars(cx)?;
 
     ensure!(!args.is_empty(), "Shell command required");
     shell(cx, &args.join(" "), &ShellBehavior::Append);
@@ -2288,7 +2293,7 @@ fn insert_output(
         return Ok(());
     }
 
-    set_document_info_into_env_vars(cx);
+    set_document_info_into_env_vars(cx)?;
 
     ensure!(!args.is_empty(), "Shell command required");
     shell(cx, &args.join(" "), &ShellBehavior::Insert);
@@ -2319,7 +2324,7 @@ fn pipe_impl(
 
     ensure!(!args.is_empty(), "Shell command required");
 
-    set_document_info_into_env_vars(cx);
+    set_document_info_into_env_vars(cx)?;
 
     shell(cx, &args.join(" "), behavior);
     Ok(())
@@ -2334,7 +2339,7 @@ fn run_shell_command(
         return Ok(());
     }
 
-    set_document_info_into_env_vars(cx);
+    set_document_info_into_env_vars(cx)?;
 
     let shell = cx.editor.config().shell.clone();
     let args = args.join(" ");
